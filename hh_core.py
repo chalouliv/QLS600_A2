@@ -1,6 +1,6 @@
 """Core HH model: shared by fitting scripts and the deliverable hh_model.py.
 
-Model: I = g_bar * m^p * h * n * (V - E) + g_L * (V - E_L)   (n optional)
+Model: I = g_bar * m^pm * h^ph * n^pn * (V - E) + g_L * (V - E_L)   (n optional)
   m_inf(V) = 1/(1+exp(-(V-Vm)/km))        (fast activation)
   h_inf(V) = 1/(1+exp(+(V-Vh)/kh))        (inactivation)
   n_inf(V) = 1/(1+exp(-(V-Vn)/kn))        (slow activation, optional)
@@ -71,12 +71,13 @@ def gating_n(V, params):
     return n_inf, tau_n
 
 
-def simulate(V_mV, t_ms, params, p=1, use_h=True, use_leak=True, use_n=False, dt=None):
+def simulate(V_mV, t_ms, params, p=1, ph=1, pn=1, use_h=True, use_leak=True, use_n=False, dt=None):
     """Predict current for a voltage-clamp waveform.
 
     V_mV, t_ms: array-likes of equal length (t in ms, uniformly sampled).
     params: dict or sequence of the 22 physical parameters (see PNAMES).
-    use_n: include the slow second activation gate (I *= n).
+    p, ph, pn: exponents on the m, h, n gates (p kept as alias for the m exponent).
+    use_n: include the slow second activation gate (I *= n^pn).
     Returns: predicted current array (same units as fitted data).
     Initial gate states = steady state at V_mV[0].
     """
@@ -107,9 +108,9 @@ def simulate(V_mV, t_ms, params, p=1, use_h=True, use_leak=True, use_n=False, dt
             h = ah[k] * h + bh[k]
         if use_n:
             n = an[k] * n + bn[k]
-        iv = g_bar * (m ** p) * h * (V[k] - E)
+        iv = g_bar * (m ** p) * (h ** ph) * (V[k] - E)
         if use_n:
-            iv *= n
+            iv *= (n ** pn)
         if use_leak:
             iv += g_L * (V[k] - E_L)
         out[k] = iv
