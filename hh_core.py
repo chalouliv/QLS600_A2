@@ -7,6 +7,16 @@ Model: I = g_bar * m^pm * h^ph * n^pn * (V - E) + g_L * (V - E_L)   (n optional)
   tau_X(V) = tX_min + tX_amp * exp(-((V-tX_c)/tX_w)^2)   (bell-shaped)
 State update is the exact solution over each sample interval (piecewise-constant V):
   X <- X + (Xinf(V) - X) * (1 - exp(-dt/tau(V)))
+
+HONEST-SCORING CONTRACT (fixed 2026-10-12):
+  simulate() initializes gates at steady state of V[0]. That is correct ONLY
+  when the trace starts at an equilibrated hold. NEVER score a mid-protocol
+  segment by simulating it standalone -- the gates get reset to wrong values
+  (measured: m off by 0.80, h off by 0.55 at the Extra validation start,
+  predicted conductance off 8x, R^2 0.915 -> 0.786). Instead:
+    * preferred: simulate the FULL trace from t=0, then slice the segment
+      (see honest_predict() below), or
+    * pass the true gate states as m0/h0/n0 if you have them.
 """
 import numpy as np
 
@@ -71,15 +81,20 @@ def gating_n(V, params):
     return n_inf, tau_n
 
 
-def simulate(V_mV, t_ms, params, p=1, ph=1, pn=1, use_h=True, use_leak=True, use_n=False, dt=None):
+def simulate(V_mV, t_ms, params, p=1, ph=1, pn=1, use_h=True, use_leak=True,
+             use_n=False, dt=None, m0=None, h0=None, n0=None):
     """Predict current for a voltage-clamp waveform.
 
     V_mV, t_ms: array-likes of equal length (t in ms, uniformly sampled).
     params: dict or sequence of the 22 physical parameters (see PNAMES).
     p, ph, pn: exponents on the m, h, n gates (p kept as alias for the m exponent).
     use_n: include the slow second activation gate (I *= n^pn).
+    m0, h0, n0: optional explicit initial gate states ("better starting values").
+        If None (default), gates start at steady state of V_mV[0] -- correct
+        only when the trace starts at an equilibrated hold. For a segment
+        starting mid-protocol, either simulate the full trace from t=0 and
+        slice (preferred; see honest_predict), or pass the true states here.
     Returns: predicted current array (same units as fitted data).
-    Initial gate states = steady state at V_mV[0].
     """
     if isinstance(params, dict):
         params = [params[k] for k in PNAMES]
@@ -98,9 +113,16 @@ def simulate(V_mV, t_ms, params, p=1, ph=1, pn=1, use_h=True, use_leak=True, use
         n_inf, tau_n = gating_n(V, params)
         an = np.exp(-dt / tau_n)
         bn = n_inf * (1 - an)
-    m = m_inf[0]
-    h = h_inf[0] if use_h else 1.0
-    n = n_inf[0] if use_n else 1.0
+    # Initial gate states: explicit values win; otherwise steady state at V[0].
+    m = m_inf[0] if m0 is None else float(m0)
+    if use_h:
+        h = h_inf[0] if h0 is None else float(h0)
+    else:
+        h = 1.0
+    if use_n:
+        n = n_inf[0] if n0 is None else float(n0)
+    else:
+        n = 1.0
     out = np.empty(len(V))
     for k in range(len(V)):
         m = am[k] * m + bm[k]
@@ -115,6 +137,20 @@ def simulate(V_mV, t_ms, params, p=1, ph=1, pn=1, use_h=True, use_leak=True, use
             iv += g_L * (V[k] - E_L)
         out[k] = iv
     return out
+
+
+def honest_predict(V_mV, t_ms, params, mask, **sim_kw):
+    """Honest segment predictions: simulate the FULL trace from t=0, then slice.
+
+    V_mV, t_ms: full-trace arrays. mask: boolean array selecting the segment
+    to score (e.g. the held-out validation window). sim_kw: passed through
+    to simulate() (p, ph, pn, use_h, use_leak, use_n, m0/h0/n0, ...).
+    Returns predictions on the masked segment only, with true gate history.
+    This is the scoring Thursday's live test uses -- never score a segment
+    by simulating it standalone.
+    """
+    mask = np.asarray(mask, dtype=bool)
+    return simulate(V_mV, t_ms, params, **sim_kw)[mask]
 
 
 def q0_base():
@@ -143,3 +179,4 @@ def bounds():
                    np.log(20), np.log(200), 80, np.log(100), np.log(50), np.log(200), 80, np.log(100),
                    20, np.log(30), np.log(50), np.log(200), 80, np.log(100)])
     return LB, UB
+
