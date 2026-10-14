@@ -45,6 +45,12 @@ from scipy.optimize import least_squares
 from hh_core import simulate, honest_predict, unpack, q0_base, bounds
 from model_metrics import evaluate as evaluate_metrics, resolve_names as resolve_metric_names
 
+#CookLab1UnknownChannelExtra
+#Kv_test_channel
+#CookLab1UnknownChannel
+#CaT_test_channel
+#SameChannel_newcell
+
 _here = os.path.dirname(os.path.abspath(__file__))
 _default = os.path.join(_here, 'CookLab1UnknownChannelExtra.txt')
 if not os.path.exists(_default):
@@ -62,7 +68,7 @@ if _metrics_opt in ("all", "fast", "medium"):
     METRICS_WHICH = _metrics_opt
 else:
     METRICS_WHICH = [s.strip() for s in _metrics_opt.split(",") if s.strip()]
-VALID_FRAC = 0.05  # last 15% of samples = held-out validation
+VALID_FRAC = 0.001  # last 15% of samples = held-out validation
 
 d = np.loadtxt(DATA)
 t, V, I = d[:, 0], d[:, 1], d[:, 2]
